@@ -34,7 +34,7 @@ Button input 2  | [ ]8          A6[ ] MOSI/11[ ]~|
 #include <Adafruit_NeoPixel.h>
 
 #define PIN        7 // Which pin on the Arduino is connected to the NeoPixels?
-#define NUMPIXELS 16 // How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS 12 // How many NeoPixels are attached to the Arduino?
 
 // When setting up the NeoPixel library, we tell it how many pixels,
 // and which pin to use to send signals. Note that for older NeoPixel
@@ -50,13 +50,12 @@ const int throttle_pin = A0;     // Analog input pin
 const int motor_pwm_pin = 3;      //pwm output (alternative can be 6)
 const int brake_pin = 5;         // brake input pin pulled high
 const int button1_pin = 4;         // button input pin pulled high
-const int button2_pin = 8;         // button input pin pulled high
-//const int neopixel_pin = 6;       // ? 
+const int button2_pin = 8;         // button input pin pulled high 
 
 
 // Adjust these based on hardware setup
 int batt_cell_sel = 6;        // number of lipo cells. 10 MAX. 2cell 8.4V, 3cell 12.6V, 4cell 16.8V, 5cell 21.0V, 6cell 25.2V, 7cell 29.4V, 8cell 33.6V, 9cell 37.8V, 10cell 42.0V,
-int batt_cell_v = 3200;        // battery cell min value. lipo = 3.2v ( x 1000 )
+int batt_cell_min_v = 3500;        // battery cell min value. lipo = 3.5v ( x 1000 )
 int batt_cell_max_v = 4200;        // battery cell max value. lipo = 4.2v ( x 1000 )
 
 int throttle_max = 850;      //adc value of 100% throttle (850 = 4.15V)
@@ -116,7 +115,7 @@ void setup() {
 
   pixels.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   
-  //Serial.begin(115200); // initialize serial communications at  bps:
+ // Serial.begin(115200); // initialize serial communications at  bps:
   
   pinMode(brake_pin, INPUT_PULLUP);
   pinMode(button1_pin, INPUT);
@@ -183,30 +182,29 @@ void check_batt() {
   batt_v_input = analogRead(batt_volatge_pin);
   
   //calculate the min safe battery voltage before shutting down the motor.
-  batt_v_min = batt_cell_sel * batt_cell_v; // result in voltage x 1000
+  batt_v_min = batt_cell_sel * batt_cell_min_v; // result in voltage x 1000
 
   //voltage divider
   // 110 / 10 * (2.1212) = 23.33v   |   5 / 1023 * [434] = 2.1212
-  //batt_v = (110 / 10 * (1023 / 5 * batt_v_input)) * 100; //result in voltage x 100
-  batt_v = (4.887 * batt_v_input) * 11; //result in voltage x 1000
+  //batt_v = (110 / 10 * (1023 / 5 * batt_v_input)) * 1000; //result in voltage x 100
+  //batt_v = (4.887 * batt_v_input) * 11; //result in voltage x 1000
+  batt_v = (4.887 * batt_v_input) * 10.7; //result in voltage x 1000 (adjusted for resistor %)
 
 
-  //change to trigger batt_low at 3300 (3.3V) and batt_ex_low at 3200 (3.2V)?
-  if (batt_v < batt_v_min){
-    digitalWrite(LED_BUILTIN, HIGH); 
-    if (currentMillis - battMillis > 5000){  //if bat low for 5 secs in a row trigger vey low flag
-      batt_ex_low = 1;
-    }
-  } else if (batt_v < batt_v_min + 1000){
+
+  if (batt_v < batt_cell_sel * (batt_cell_min_v + 100)){
     digitalWrite(LED_BUILTIN, HIGH);
     if (currentMillis - battMillis > 5000){  //if bat low for 5 secs in a row trigger low flag
       batt_low = 1;
+      if (batt_v < batt_v_min){
+        batt_ex_low = 1; 
+      }
     }
   } else {
     digitalWrite(LED_BUILTIN, LOW);
-    battMillis = currentMillis;
+    battMillis = currentMillis; 
   }
-
+  
 
   // 1023 / 5.0v * [2.12v] = 434
   // 5 / 1023 * [434] = 2.1212
@@ -240,18 +238,7 @@ void check_throttle() {
     command_pwm = 150;   
   }
 
-/*
-  //change ramp up speed based on current speed
-  if (motor_pwm > 80){
-    ramp = 3;
-  } else if (motor_pwm > 60) {
-    ramp = 5;
-  } else {
-    ramp = 10;
-  }
-*/
 
-  //maybe use this?
   ramp = map(motor_pwm, 20, 200, 10, 1);
   ramp = constrain(ramp, 1, 10); // needed to pwm between 0 and 255
 
@@ -329,7 +316,7 @@ int batt_curr_level = batt_v - batt_v_min;
 
  //command_pwm
   if (brake_state == HIGH){
-    if (motor_pwm > 20){
+    if (motor_pwm > 19){ //if driving show throttle level
       if (batt_low == 1){
         neo_red = 200;
         neo_green = 200;
@@ -341,10 +328,20 @@ int batt_curr_level = batt_v - batt_v_min;
       }
       pixel_max = map(motor_pwm, 0, 255, 0, NUMPIXELS); // pwm min, pwm max, pixel min, pixel max)
       pixel_max = constrain(pixel_max, 0, NUMPIXELS);  
-    } else {
-      neo_red = 0;
-      neo_green = 100;
-      neo_blue = 0;
+    } else { //if not driving show current battery level
+      if (batt_low == 1 && batt_ex_low == 0){
+        neo_red = 100;
+        neo_green = 80;
+        neo_blue = 0;        
+      } else if (batt_ex_low == 1){
+        neo_red = 100;
+        neo_green = 0;
+        neo_blue = 0;
+      } else {
+        neo_red = 0;
+        neo_green = 100;
+        neo_blue = 0;
+      }
       pixel_max = map(batt_curr_level, 0, batt_full_scale, 0, NUMPIXELS);
       pixel_max = constrain(pixel_max, 0, NUMPIXELS);  
     }
@@ -361,11 +358,16 @@ int batt_curr_level = batt_v - batt_v_min;
   if (pixel_number > NUMPIXELS) pixel_number=0;
 
   if (pixel_number > pixel_max){ // set unused pixels to off or w/e
-    neo_red = 2;
-    neo_green = 2;
-    neo_blue = 2; 
+    if (batt_ex_low == 1){
+        neo_red = 2;
+        neo_green = 0;
+        neo_blue = 0;
+    } else {
+        neo_red = 0;
+        neo_green = 2;
+        neo_blue = 2; 
+    }
   }
-
   
   pixels.setPixelColor(pixel_number, pixels.Color(neo_red, neo_green, neo_blue));  //(r, g, b) 0 to 255 
   pixels.show();   // Send the updated pixel colors to the hardware.
